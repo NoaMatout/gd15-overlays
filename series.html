@@ -14,7 +14,7 @@
     refresh  seconds between two updates (60 by default)
     width    panel width in px (760 by default)
     lang     en (default) or fr
-    api      GD15 instance to read from (default https://leagueofstats-delta.vercel.app)
+    api      GD15 instance to read from (default https://gd15.vercel.app)
     preview  1 = checkerboard behind the panel, to check transparency outside OBS
 -->
 <style>
@@ -141,7 +141,7 @@
 <script>
 const params = new URLSearchParams(location.search);
 // Data comes from the hosted GD15 API unless ?api= points at another instance.
-const API = (params.get("api") || "https://leagueofstats-delta.vercel.app").replace(/\/+$/, "");
+const API = (params.get("api") || "https://gd15.vercel.app").replace(/\/+$/, "");
 const TEAM = (params.get("team") || "").trim();
 const BANS = Math.max(0, Math.min(10, parseInt(params.get("bans") || "0", 10) || 0));
 const SHOW_SERIES_BANS = params.get("seriesbans") !== "0";
