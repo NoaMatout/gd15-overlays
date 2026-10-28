@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GD15 · Series overlay</title>
+<script src="i18n.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet">
+<!--
+  OBS browser source: series.html?team=G2%20Esports
+    team     team to follow (Leaguepedia name), required
+    bans=N   adds the N bans recommended against that team (0 by default)
+    seriesbans=0  hides the bans of each game of the series (shown by default)
+    refresh  seconds between two updates (60 by default)
+    width    panel width in px (760 by default)
+    lang     en (default) or fr
+    api      GD15 instance to read from (default https://leagueofstats-delta.vercel.app)
+    preview  1 = checkerboard behind the panel, to check transparency outside OBS
+-->
+<style>
+  /* GD15 tokens (copied from gd15.css: this page must load alone in OBS 27) */
+  :root {
+    --panel: rgba(11, 12, 14, 0.92);
+    --line: #2a2e35;
+    --text: #d6d8dc;
+    --strong: #f2f3f5;
+    --muted: #9aa0a8;
+    --gold: #ffb000;
+    --team: #3ddc97;
+    --opp: #ff5c5c;
+    --win: #3ddc97;
+    --width: 760px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: transparent; }
+  body {
+    color: var(--text);
+    font: 700 15px/1.3 "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+    padding: 24px;
+  }
+  body.preview {
+    background: repeating-conic-gradient(#3a3f47 0% 25%, #2a2e35 0% 50%) 0 0 / 32px 32px;
+    min-height: 100vh;
+  }
+  .panel {
+    width: var(--width);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-top: 3px solid var(--gold);
+    overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  }
+  .head { padding: 12px 18px 10px; border-bottom: 1px solid var(--line); }
+  .event {
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--gold);
+    display: flex; justify-content: space-between; gap: 12px;
+  }
+  .event .ago { color: var(--muted); letter-spacing: .06em; }
+  .event .live { color: var(--opp); display: inline-flex; align-items: center; }
+  .event .live i {
+    width: 8px; height: 12px; background: var(--opp); margin-right: 6px;
+    animation: pulse 1.2s steps(1) infinite;
+  }
+  @keyframes pulse { 50% { opacity: .25; } }
+  .game .label b.now { display: block; color: var(--opp); font-size: 11px; letter-spacing: .1em; }
+  .score {
+    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; grid-column-gap: 16px; margin-top: 6px;
+  }
+  .score .name { font-size: 22px; font-weight: 800; text-transform: uppercase; color: var(--strong); display: flex; align-items: center; min-width: 0; }
+  .score .name.opp { justify-content: flex-end; text-align: right; }
+  .score .name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .score .logo { width: 40px; height: 40px; object-fit: contain; flex: none; }
+  .score .name.team .logo { margin-right: 12px; }
+  .score .name.opp .logo { margin-left: 12px; }
+  .score .num b.lead { color: var(--win); }
+  .score .num { font-size: 30px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .score .num span { color: var(--muted); margin: 0 8px; }
+
+  .games { padding: 6px 18px; }
+  .game {
+    display: grid; grid-template-columns: 74px 1fr 30px 1fr; align-items: center; grid-column-gap: 10px;
+    padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    animation: enter .6s ease-out both;
+  }
+  .game:last-child { border-bottom: 0; }
+  .game { border-left: 3px solid transparent; padding-left: 10px; margin-left: -13px; }
+  .game.won-team { border-left-color: var(--team); }
+  .game.won-opp { border-left-color: var(--opp); }
+  .game .label { font-size: 13px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+  .picks.lost { opacity: .45; filter: saturate(.4); }
+  .side { display: flex; flex-direction: column; }
+  .side > * + * { margin-top: 5px; }
+  .side.opp { align-items: flex-end; }
+  .bans-row { display: flex; align-items: center; }
+  .bans-row > * + * { margin-left: 3px; }
+  .bans-row .tag { font-size: 10px; letter-spacing: .1em; color: var(--muted); margin: 0 4px; }
+  .bans-row .banned { position: relative; }
+  .bans-row .banned .icon, .bans-row .banned .fallback {
+    width: 26px; height: 26px; border-color: rgba(255, 255, 255, 0.18); filter: grayscale(.6) brightness(.9);
+  }
+  .bans-row .banned::after {
+    content: ""; position: absolute; top: 0; right: 0; bottom: 0; left: 0;
+    background: linear-gradient(135deg, transparent 47.5%, rgba(232, 64, 87, .9) 47.5%, rgba(232, 64, 87, .9) 52.5%, transparent 52.5%);
+  }
+  .game .vs { text-align: center; color: var(--muted); font-size: 12px; }
+  .picks { display: flex; }
+  .picks > * + * { margin-left: 4px; }
+  .picks.opp { justify-content: flex-end; }
+  .icon, .fallback {
+    width: 40px; height: 40px; object-fit: cover; display: block;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+  }
+  .picks.team .icon, .picks.team .fallback { border-color: var(--team); }
+  .picks.opp .icon, .picks.opp .fallback { border-color: var(--opp); }
+  .fallback {
+    display: grid; place-items: center; background: #15171b; color: var(--gold); font-size: 12px;
+  }
+
+  .block { padding: 10px 18px 14px; border-top: 1px solid var(--line); }
+  .block-title {
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--gold);
+    margin-bottom: 8px; display: flex; justify-content: space-between;
+  }
+  .block-title span { color: var(--muted); }
+  .brand { color: var(--gold); font-weight: 800; letter-spacing: 0; }
+  .locked { display: flex; flex-wrap: wrap; margin-bottom: -4px; }
+  .locked > * { margin: 0 4px 4px 0; }
+  .locked .icon, .locked .fallback { width: 32px; height: 32px; filter: grayscale(1) brightness(.6); }
+  .bans { display: flex; }
+  .bans > * + * { margin-left: 8px; }
+  .ban { width: 80px; text-align: center; font-size: 11px; color: var(--muted); }
+  .ban .icon, .ban .fallback { width: 56px; height: 56px; margin: 0 auto 4px; border-color: var(--opp); }
+  .ban b { display: block; color: var(--text); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .message { padding: 14px 18px; color: var(--muted); font-size: 14px; }
+  @keyframes enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+</style>
+</head>
+<body>
+<div class="panel" id="panel"><div class="message" data-i18n>Loading…</div></div>
+
+<script>
+const params = new URLSearchParams(location.search);
+// Data comes from the hosted GD15 API unless ?api= points at another instance.
+const API = (params.get("api") || "https://leagueofstats-delta.vercel.app").replace(/\/+$/, "");
+const TEAM = (params.get("team") || "").trim();
+const BANS = Math.max(0, Math.min(10, parseInt(params.get("bans") || "0", 10) || 0));
+const SHOW_SERIES_BANS = params.get("seriesbans") !== "0";
+const REFRESH_MS = Math.max(15, parseInt(params.get("refresh") || "60", 10) || 60) * 1000;
+const LIVE_REFRESH_MS = 15000;  // while the team is on stage
+if (params.get("width")) document.documentElement.style.setProperty("--width", `${parseInt(params.get("width"), 10)}px`);
+if (params.get("preview") === "1") document.body.classList.add("preview");
+
+// ---------- Data Dragon champion icons ----------
+const ddragon = { version: null, ids: new Map() };
+const keyOf = (name) => name.toLowerCase().replace(/[^a-z]/g, "");
+
+async function loadDdragon() {
+  try {
+    const versions = await (await fetch("https://ddragon.leagueoflegends.com/api/versions.json")).json();
+    const data = await (await fetch(`https://ddragon.leagueoflegends.com/cdn/${versions[0]}/data/en_US/champion.json`)).json();
+    for (const champ of Object.values(data.data)) {
+      ddragon.ids.set(keyOf(champ.name), champ.id);
+      ddragon.ids.set(keyOf(champ.id), champ.id);
+    }
+    ddragon.version = versions[0];
+  } catch (err) {
+    console.warn("Data Dragon unavailable, using initials", err);
+  }
+}
+
+function fallbackEl(name) {
+  const div = document.createElement("div");
+  div.className = "fallback";
+  div.textContent = name.replace(/[^A-Za-z ]/g, "").split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
+  div.title = name;
+  return div;
+}
+
+function iconEl(name) {
+  const id = ddragon.ids.get(keyOf(name));
+  if (!id || !ddragon.version) return fallbackEl(name);
+  const img = document.createElement("img");
+  img.className = "icon";
+  img.alt = img.title = name;
+  img.src = `https://ddragon.leagueoflegends.com/cdn/${ddragon.version}/img/champion/${id}.png`;
+  img.onerror = () => img.replaceWith(fallbackEl(name));
+  return img;
+}
+
+function logoEl(url, name) {
+  if (!url) return null;
+  const img = h("img", { class: "logo", src: url, alt: name });
+  img.onerror = () => img.parentNode && img.parentNode.removeChild(img);
+  return img;
+}
+
+// Element.replaceChildren is Chrome 86+, newer than OBS 27's browser source.
+function setChildren(el, nodes) {
+  el.textContent = "";
+  for (const node of nodes) el.appendChild(node);
+}
+
+const h = (tag, props = {}, ...children) => {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === "class") el.className = v;
+    else if (v != null) el.setAttribute(k, v);
+  }
+  for (const c of children.flat()) if (c != null && c !== false) el.append(c);
+  return el;
+};
+const agoLabel = (hours) => hours == null ? "" : hours < 1 ? t("{n} min ago", { n: Math.max(1, Math.round(hours * 60)) }) : t("{n} h ago", { n: Math.round(hours) });
+
+// ---------- data ----------
+async function getJson(url) {
+  const res = await fetch(url);
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || res.statusText);
+  return body;
+}
+
+let lastGames = 0;
+let isLive = false;
+
+// Re-check faster while the team is playing live.
+function scheduleNext() {
+  setTimeout(() => refresh().finally(scheduleNext), isLive ? Math.min(REFRESH_MS, LIVE_REFRESH_MS) : REFRESH_MS);
+}
+
+// A team's bans for one game, small and struck through (older data may have none).
+function bansRow(bans) {
+  if (!SHOW_SERIES_BANS || !bans || !bans.length) return null;
+  return h("div", { class: "bans-row" },
+    h("span", { class: "tag" }, "BANS"),
+    bans.map(c => h("span", { class: "banned" }, iconEl(c))));
+}
+
+async function refresh() {
+  const panel = document.getElementById("panel");
+  if (!TEAM) {
+    setChildren(panel, [h("div", { class: "message" }, t("Add ?team=Team name to the URL (e.g. ?team=G2%20Esports)."))]);
+    return;
+  }
+  let series, report = null;
+  try {
+    series = await getJson(API + "/api/series?" + new URLSearchParams({ team: TEAM }));
+    if (BANS) report = await getJson(API + "/api/bans?" + new URLSearchParams({ team: TEAM, top: 60 }));
+  } catch (err) {
+    // Keep the last good render on screen during a hiccup; only show errors before the first one.
+    if (!lastGames) setChildren(panel, [h("div", { class: "message" }, t("Series unavailable: {message}", { message: err.message }))]);
+    return;
+  }
+  isLive = Boolean(series.live);
+  render(series, report);
+}
+
+function render(sr, report) {
+  const panel = document.getElementById("panel");
+  const [teamWins, oppWins] = sr.score.split("-");
+
+  const head = h("div", { class: "head" },
+    h("div", { class: "event" },
+      h("span", {}, h("span", { class: "brand" }, "GD15 "), `${sr.tournament || t("Series")} · Fearless`),
+      sr.live
+        ? h("span", { class: "live" }, h("i", {}), "LIVE" + (sr.best_of ? ` · BO${sr.best_of}` : ""))
+        : h("span", { class: "ago" }, sr.recent ? t("last game {ago}", { ago: agoLabel(sr.hours_since_last_game) }) : t("last series"))),
+    h("div", { class: "score" },
+      h("div", { class: "name team" }, logoEl(sr.team_logo, sr.team), h("span", {}, sr.team)),
+      h("div", { class: "num" }, h("b", { class: +teamWins > +oppWins ? "lead" : "" }, teamWins), h("span", {}, "–"),
+        h("b", { class: +oppWins > +teamWins ? "lead" : "" }, oppWins)),
+      h("div", { class: "name opp" }, h("span", {}, sr.opponent), logoEl(sr.opponent_logo, sr.opponent))));
+
+  const games = h("div", { class: "games" }, sr.games.map(g => {
+    // Winner: coloured edge on its side; the loser's picks are dimmed.
+    const won = g.winner === sr.team ? "team" : g.winner ? "opp" : null;
+    const row = h("div", { class: "game" + (won ? ` won-${won}` : "") },
+      h("div", { class: "label" }, `Game ${g.n}`, g.state === "inProgress" ? h("b", { class: "now" }, t("In progress")) : null),
+      h("div", { class: "side team" },
+        h("div", { class: "picks team" + (won === "opp" ? " lost" : "") }, g.team_picks.map(iconEl)),
+        bansRow(g.team_bans)),
+      h("div", { class: "vs" }, "vs"),
+      h("div", { class: "side opp" },
+        h("div", { class: "picks opp" + (won === "team" ? " lost" : "") }, g.opponent_picks.map(iconEl)),
+        bansRow(g.opponent_bans)));
+    if (g.n <= lastGames) row.style.animation = "none";  // only animate games that just appeared
+    return row;
+  }));
+
+  const blocks = [head, games];
+  blocks.push(h("div", { class: "block" },
+    h("div", { class: "block-title" }, t("Locked champions"), h("span", {}, `${sr.fearless.length}`)),
+    h("div", { class: "locked" }, sr.fearless.map(iconEl))));
+
+  if (report) {
+    const used = new Set(sr.fearless.map(keyOf));
+    const bans = report.bans.filter(b => !used.has(keyOf(b.champion))).slice(0, BANS);
+    blocks.push(h("div", { class: "block" },
+      h("div", { class: "block-title" }, t("Recommended bans against {team}", { team: sr.team })),
+      h("div", { class: "bans" }, bans.map(b => h("div", { class: "ban" },
+        iconEl(b.champion), h("b", {}, b.player), `${b.wins}/${b.games}`)))));
+  }
+
+  setChildren(panel, blocks);
+  lastGames = Math.max(lastGames, ...sr.games.map(g => g.n));
+}
+
+loadDdragon().finally(() => {
+  refresh().finally(scheduleNext);
+});
+</script>
+</body>
+</html>
