@@ -28,7 +28,7 @@ recommended against each side and their comfort picks. Width **960**, height **5
 It refreshes every 5 minutes (`refresh=`), and takes `lang`, `width`, `preview`
 and `api` like the series panel.
 
-![Preview overlay](docs/preview-fr.png)
+![Preview overlay](docs/preview-en.png)
 
 ## Parameters (series panel)
 
