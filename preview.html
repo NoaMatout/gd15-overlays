@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GD15 · Match preview overlay</title>
+<script src="i18n.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet">
+<!--
+  OBS browser source for the pre-show: preview.html?team=Karmine%20Corp
+    team     a team of the series to preview (LoL Esports or Leaguepedia name, or code), required
+    refresh  seconds between two updates (300 by default)
+    width    panel width in px (900 by default)
+    lang     en (default) or fr
+    api      GD15 instance to read from (default https://gd15.vercel.app)
+    preview  1 = checkerboard behind the panel, to check transparency outside OBS
+  Shows the team's next series: stakes, recent form, head to head this year,
+  the bans recommended against each side and their comfort picks.
+-->
+<style>
+  /* GD15 tokens (copied from gd15.css: this page must load alone in OBS 27) */
+  :root {
+    --panel: rgba(11, 12, 14, 0.92);
+    --line: #2a2e35;
+    --text: #d6d8dc;
+    --strong: #f2f3f5;
+    --muted: #9aa0a8;
+    --gold: #ffb000;
+    --win: #3ddc97;
+    --loss: #ff5c5c;
+    --width: 900px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: transparent; }
+  body {
+    color: var(--text);
+    font: 700 15px/1.3 "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+    padding: 24px;
+  }
+  body.preview {
+    background: repeating-conic-gradient(#3a3f47 0% 25%, #2a2e35 0% 50%) 0 0 / 32px 32px;
+    min-height: 100vh;
+  }
+  .panel {
+    width: var(--width); background: var(--panel); border: 1px solid var(--line);
+    border-top: 3px solid var(--gold); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  }
+  .head { padding: 12px 20px; border-bottom: 1px solid var(--line); }
+  .event { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); display: flex; justify-content: space-between; }
+  .event .when { color: var(--muted); letter-spacing: .06em; }
+  .stakes { margin-top: 6px; color: var(--loss); font-size: 13px; letter-spacing: .08em; text-transform: uppercase; }
+  .score { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; grid-column-gap: 16px; margin-top: 8px; }
+  .name { display: flex; align-items: center; min-width: 0; font-size: 26px; font-weight: 800; color: var(--strong); text-transform: uppercase; }
+  .name.b { justify-content: flex-end; text-align: right; }
+  .name span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .name small { display: block; font-size: 12px; color: var(--muted); letter-spacing: .08em; }
+  .logo { width: 44px; height: 44px; object-fit: contain; flex: none; }
+  .name.a .logo { margin-right: 12px; }
+  .name.b .logo { margin-left: 12px; }
+  .h2h { text-align: center; color: var(--muted); font-size: 11px; letter-spacing: .1em; }
+  .h2h b { display: block; color: var(--strong); font-size: 28px; letter-spacing: 0; }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; }
+  .col { padding: 12px 20px 14px; }
+  .col + .col { border-left: 1px solid var(--line); }
+  .k { color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; margin: 10px 0 6px; }
+  .k:first-child { margin-top: 0; }
+  .form i { display: inline-block; width: 22px; height: 22px; line-height: 22px; text-align: center; font-style: normal; font-size: 12px; margin-right: 4px; color: #0b0c0e; }
+  .form i.w { background: var(--win); }
+  .form i.l { background: var(--loss); }
+  .row { display: flex; align-items: center; margin-bottom: 6px; }
+  .row .icon, .row .fallback { width: 36px; height: 36px; margin-right: 10px; flex: none; border: 1px solid var(--line); }
+  .row .who { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .who span { color: var(--muted); font-weight: 500; margin-left: 6px; }
+  .row .rec { color: var(--strong); margin-left: 8px; }
+  .fallback { display: flex; align-items: center; justify-content: center; background: #1d2026; color: var(--muted); font-size: 12px; }
+  .picks .icon, .picks .fallback { width: 40px; height: 40px; margin-right: 6px; border: 1px solid var(--line); }
+  .foot { border-top: 1px solid var(--line); padding: 6px 20px; color: var(--muted); font-size: 11px; font-weight: 500; }
+  .message { padding: 18px 20px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="panel" id="panel"><div class="message">GD15…</div></div>
+<script>
+const params = new URLSearchParams(location.search);
+const TEAM = params.get("team");
+const API = (params.get("api") || "https://gd15.vercel.app").replace(/\/$/, "");
+const REFRESH_MS = Math.max(60, parseInt(params.get("refresh") || "300", 10)) * 1000;
+if (params.get("width")) document.documentElement.style.setProperty("--width", `${parseInt(params.get("width"), 10)}px`);
+if (params.get("preview") === "1") document.body.classList.add("preview");
+
+const STAKES = { elimination: "Elimination match: the loser goes home", qualification: "Qualification match: the winner goes through",
+                 decider: "Decider: win and in, lose and out" };
+
+// ---------- helpers (no ?., flex gap or replaceChildren: OBS 27 is Chromium 75) ----------
+const h = (tag, props = {}, ...children) => {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === "class") el.className = v;
+    else if (v != null) el.setAttribute(k, v);
+  }
+  for (const c of children.flat()) if (c != null && c !== false) el.append(c);
+  return el;
+};
+function setChildren(el, nodes) {
+  el.textContent = "";
+  for (const node of nodes) if (node) el.appendChild(node);
+}
+async function getJson(url) {
+  const res = await fetch(url);
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || res.statusText);
+  return body;
+}
+
+const ddragon = { version: null, ids: new Map() };
+const keyOf = (name) => name.toLowerCase().replace(/[^a-z]/g, "");
+async function loadDdragon() {
+  try {
+    const versions = await getJson("https://ddragon.leagueoflegends.com/api/versions.json");
+    const data = await getJson(`https://ddragon.leagueoflegends.com/cdn/${versions[0]}/data/en_US/champion.json`);
+    for (const c of Object.values(data.data)) { ddragon.ids.set(keyOf(c.name), c.id); ddragon.ids.set(keyOf(c.id), c.id); }
+    ddragon.version = versions[0];
+  } catch (err) {
+    console.warn("Data Dragon unavailable, using initials", err);
+  }
+}
+function fallbackEl(name) {
+  return h("div", { class: "fallback", title: name }, name.replace(/[^A-Za-z ]/g, "").split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase());
+}
+function iconEl(name) {
+  const id = ddragon.ids.get(keyOf(name));
+  if (!id || !ddragon.version) return fallbackEl(name);
+  const img = h("img", { class: "icon", alt: name, title: name, src: `https://ddragon.leagueoflegends.com/cdn/${ddragon.version}/img/champion/${id}.png` });
+  img.onerror = () => img.replaceWith(fallbackEl(name));
+  return img;
+}
+function logoEl(url, name) {
+  if (!url) return null;
+  const img = h("img", { class: "logo", src: url, alt: name });
+  img.onerror = () => img.parentNode && img.parentNode.removeChild(img);
+  return img;
+}
+function when(iso) {
+  const d = new Date(iso);
+  const lang = document.documentElement.lang === "fr" ? "fr-FR" : "en-GB";
+  return d.toLocaleDateString(lang, { weekday: "short", day: "numeric", month: "short" }) + " · "
+    + d.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" });
+}
+
+// ---------- render ----------
+function side(team) {
+  const form = team.form.length
+    ? h("div", { class: "form" }, team.form.map(w => h("i", { class: w ? "w" : "l" }, w ? "W" : "L")))
+    : h("div", { class: "form" }, "–");
+  const bans = team.bans.map(b => h("div", { class: "row" }, iconEl(b.champion),
+    h("div", { class: "who" }, b.champion, h("span", {}, b.player)), h("div", { class: "rec" }, `${b.wins}–${b.games - b.wins}`)));
+  return h("div", { class: "col" },
+    h("div", { class: "k" }, t("Last {n} games", { n: team.form.length || 0 })), form,
+    h("div", { class: "k" }, t("Ban targets against {team}", { team: team.code })), bans.length ? bans : h("div", {}, "–"),
+    team.picks.length ? h("div", { class: "k" }, t("Comfort picks")) : null,
+    team.picks.length ? h("div", { class: "picks" }, team.picks.map(p => iconEl(p.champion))) : null);
+}
+
+function render(card) {
+  const [a, b] = card.teams;
+  const record = (team) => team.record ? h("small", {}, `${team.record[0]}–${team.record[1]}`) : null;
+  const [wa, wb] = card.head_to_head;
+  const head = h("div", { class: "head" },
+    h("div", { class: "event" },
+      h("span", {}, "GD15 · ", [card.label, card.stage, card.best_of ? "Bo" + card.best_of : null].filter(Boolean).join(" · ")),
+      h("span", { class: "when" }, when(card.start))),
+    card.stakes ? h("div", { class: "stakes" }, t(STAKES[card.stakes])) : null,
+    h("div", { class: "score" },
+      h("div", { class: "name a" }, logoEl(a.logo, a.name), h("span", {}, a.code, record(a))),
+      h("div", { class: "h2h" }, t("Head to head"), h("b", {}, `${wa}–${wb}`)),
+      h("div", { class: "name b" }, h("span", {}, b.code, record(b)), logoEl(b.logo, b.name))));
+  setChildren(document.getElementById("panel"), [head,
+    h("div", { class: "cols" }, side(a), side(b)),
+    h("div", { class: "foot" }, t("Pro games: Leaguepedia · schedule: LoL Esports · by GD15 (@gd15gg)"))]);
+}
+
+let shown = false;
+async function refresh() {
+  const panel = document.getElementById("panel");
+  if (!TEAM) {
+    setChildren(panel, [h("div", { class: "message" }, t("Add ?team=Team name to the URL (e.g. ?team=Karmine%20Corp)."))]);
+    return;
+  }
+  try {
+    const next = (await getJson(API + "/api/next?" + new URLSearchParams({ team: TEAM }))).next;
+    if (!next || !next.match_id) {
+      setChildren(panel, [h("div", { class: "message" }, t("No upcoming series for {team}.", { team: TEAM }))]);
+      return;
+    }
+    render(await getJson(API + "/api/card?" + new URLSearchParams({ kind: "preview", match: next.match_id })));
+    shown = true;
+  } catch (err) {
+    // Keep the last good render on screen during a hiccup.
+    if (!shown) setChildren(panel, [h("div", { class: "message" }, t("Preview unavailable: {message}", { message: err.message }))]);
+  }
+}
+
+loadDdragon().finally(() => {
+  refresh();
+  setInterval(refresh, REFRESH_MS);
+});
+</script>
+</body>
+</html>

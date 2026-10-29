@@ -106,6 +106,18 @@
 
     // overlay
     "Loading…": "Chargement…",
+    // preview overlay
+    "Elimination match: the loser goes home": "Match éliminatoire : le perdant rentre chez lui",
+    "Qualification match: the winner goes through": "Match qualificatif : le gagnant passe",
+    "Decider: win and in, lose and out": "Match décisif : qui gagne passe, qui perd sort",
+    "Last {n} games": "{n} dernières games",
+    "Ban targets against {team}": "Bans à viser contre {team}",
+    "Comfort picks": "Picks de confort",
+    "Head to head": "Face-à-face",
+    "Pro games: Leaguepedia · schedule: LoL Esports · by GD15 (@gd15gg)": "Games pro : Leaguepedia · calendrier : LoL Esports · par GD15 (@gd15gg)",
+    "Add ?team=Team name to the URL (e.g. ?team=Karmine%20Corp).": "Ajoute ?team=Nom de l'équipe à l'URL (ex. ?team=Karmine%20Corp).",
+    "No upcoming series for {team}.": "Aucune série à venir pour {team}.",
+    "Preview unavailable: {message}": "Preview indisponible : {message}",
     "Add ?team=Team name to the URL (e.g. ?team=G2%20Esports).": "Ajoute ?team=Nom de l'équipe à l'URL (ex. ?team=G2%20Esports).",
     "Series unavailable: {message}": "Série indisponible : {message}",
     "Series": "Série",

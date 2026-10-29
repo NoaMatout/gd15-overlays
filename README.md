@@ -20,7 +20,17 @@ the bans recommended against the team, updated on its own while the series is li
 
 The team name is the one used on [Leaguepedia](https://lol.fandom.com) (spaces as `%20`).
 
-## Parameters
+## Match preview (pre-show)
+
+`preview.html?team=Karmine%20Corp` shows that team's next series: stakes in a Swiss
+stage, both teams' record and last 5 games, head to head this year, the 3 bans
+recommended against each side and their comfort picks. Width **960**, height **520**.
+It refreshes every 5 minutes (`refresh=`), and takes `lang`, `width`, `preview`
+and `api` like the series panel.
+
+![Preview overlay](docs/preview-fr.png)
+
+## Parameters (series panel)
 
 | Parameter | Default | What it does |
 |---|---|---|
