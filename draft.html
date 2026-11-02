@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GD15 · Draft overlay</title>
+<script src="i18n.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet">
+<!--
+  OBS browser source for the draft: draft.html?for=jungle,mid
+    for      roles to suggest picks for (top,jungle,mid,bot,support; all by default)
+    source   pro (default: pro games, last 6 months) or soloq (Master+ solo queue, 14 days)
+    top      picks shown per role (3 by default, 1 to 5)
+    width    panel width in px (900 by default)
+    lang     en (default) or fr
+    api      GD15 instance to read from (default https://gd15.vercel.app)
+    preview  1 = checkerboard behind the panel, to check transparency outside OBS
+  Type the enemy picks in the five slots as they lock in (in OBS: right click the
+  source, "Interact"). The suggestions update after each pick; the picks are kept
+  if OBS reloads the source, until "Reset".
+  OBS 27 runs Chromium 75: no ?., ??, flex gap or replaceChildren here.
+-->
+<style>
+  :root {
+    --panel: rgba(11, 12, 14, 0.92);
+    --line: #2a2e35;
+    --text: #d6d8dc;
+    --strong: #f2f3f5;
+    --muted: #9aa0a8;
+    --gold: #ffb000;
+    --win: #3ddc97;
+    --loss: #ff5c5c;
+    --width: 900px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: transparent; }
+  body { color: var(--text); font: 700 15px/1.3 "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace; padding: 24px; }
+  body.preview { background: repeating-conic-gradient(#3a3f47 0% 25%, #2a2e35 0% 50%) 0 0 / 32px 32px; min-height: 100vh; }
+  .panel { width: var(--width); background: var(--panel); border: 1px solid var(--line); border-top: 3px solid var(--gold);
+           box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45); }
+  .head { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line);
+          font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); }
+  .head .src { color: var(--muted); letter-spacing: .06em; }
+  .head button { background: none; border: 1px solid var(--line); color: var(--muted); font: inherit; font-size: 11px; padding: 2px 8px; margin-left: 10px; cursor: pointer; }
+  .enemies { display: flex; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  .slot { flex: 1; min-width: 0; margin-right: 8px; }
+  .slot:last-child { margin-right: 0; }
+  .slot label { display: block; font-size: 10px; letter-spacing: .12em; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; }
+  .slot .pick { display: flex; align-items: center; border: 1px solid var(--line); background: rgba(255, 92, 92, 0.06); height: 40px; }
+  .slot .pick.on { border-color: var(--loss); }
+  .slot img { width: 38px; height: 38px; flex: none; }
+  .slot input { flex: 1; min-width: 0; width: 100%; background: transparent; border: 0; color: var(--strong); font: inherit; font-size: 13px;
+                padding: 0 8px; outline: none; }
+  .slot input::placeholder { color: #5b6068; }
+  .rows { padding: 4px 16px 10px; }
+  .role { display: flex; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(42, 46, 53, 0.6); }
+  .role:last-child { border-bottom: 0; }
+  .role .r { width: 92px; flex: none; font-size: 12px; letter-spacing: .12em; color: var(--gold); text-transform: uppercase; }
+  .role .r small { display: block; color: var(--muted); font-size: 10px; letter-spacing: .06em; text-transform: none; margin-top: 2px; }
+  .sugg { display: flex; flex: 1; min-width: 0; }
+  .s { display: flex; align-items: center; flex: 1; min-width: 0; margin-right: 10px; }
+  .s:last-child { margin-right: 0; }
+  .s img, .s .fallback { width: 40px; height: 40px; flex: none; border: 1px solid var(--line); margin-right: 8px; }
+  .s .t { min-width: 0; }
+  .s b { display: block; color: var(--strong); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .s span { display: block; color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .s span em { font-style: normal; color: var(--win); }
+  .s span em.neg { color: var(--loss); }
+  .s .rank { color: var(--gold); font-size: 12px; margin-right: 6px; }
+  .note { color: var(--muted); font-size: 12px; padding: 4px 0; }
+  .fallback { display: flex; align-items: center; justify-content: center; background: #1d2026; color: var(--muted); font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="panel">
+  <div class="head"><span>GD15 · <span id="title"></span></span><span><span class="src" id="src"></span><button id="reset" type="button"></button></span></div>
+  <div class="enemies" id="enemies"></div>
+  <div class="rows" id="rows"></div>
+</div>
+<datalist id="champions"></datalist>
+<script>
+const params = new URLSearchParams(location.search);
+const API = (params.get("api") || "https://gd15.vercel.app").replace(/\/$/, "");
+const ROLES = ["top", "jungle", "mid", "bot", "support"];
+const ROLE_LABEL = { top: "Top", jungle: "Jungle", mid: "Mid", bot: "ADC", support: "Support" };
+const FOR = (params.get("for") || "").split(",").filter(r => ROLES.indexOf(r) >= 0);
+const SHOW_FOR = FOR.length ? FOR : ROLES;
+const SOURCE = params.get("source") === "soloq" ? "soloq" : "pro";
+const TOP = Math.min(5, Math.max(1, parseInt(params.get("top") || "3", 10)));
+const STORE = "gd15-draft-" + SOURCE;
+if (params.get("width")) document.documentElement.style.setProperty("--width", `${parseInt(params.get("width"), 10)}px`);
+if (params.get("preview") === "1") document.body.classList.add("preview");
+
+const h = (tag, props = {}, ...children) => {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === "class") el.className = v;
+    else if (k.indexOf("on") === 0) el.addEventListener(k.slice(2), v);
+    else if (v != null && v !== false) el.setAttribute(k, v);
+  }
+  for (const c of children.flat()) if (c != null && c !== false) el.append(c);
+  return el;
+};
+function setChildren(el, nodes) {
+  el.textContent = "";
+  for (const node of nodes) if (node) el.appendChild(node);
+}
+async function getJson(url) {
+  const res = await fetch(url);
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || res.statusText);
+  return body;
+}
+
+// ---------- champions (Data Dragon) ----------
+const dd = { version: null, byKey: new Map() };
+const keyOf = (name) => name.toLowerCase().replace(/[^a-z]/g, "");
+function champion(name) { return dd.byKey.get(keyOf(name || "")) || null; }
+function iconEl(name) {
+  const c = champion(name);
+  if (!c || !dd.version) return h("div", { class: "fallback", title: name }, (name || "?").slice(0, 2).toUpperCase());
+  return h("img", { alt: c.name, title: c.name, src: `https://ddragon.leagueoflegends.com/cdn/${dd.version}/img/champion/${c.id}.png` });
+}
+
+// ---------- state ----------
+let picks = {};
+try { picks = JSON.parse(localStorage.getItem(STORE) || "{}") || {}; } catch (e) { picks = {}; }
+function save() { try { localStorage.setItem(STORE, JSON.stringify(picks)); } catch (e) { /* private mode */ } }
+
+function renderEnemies() {
+  setChildren(document.getElementById("enemies"), ROLES.map(role => {
+    const c = champion(picks[role]);
+    const input = h("input", { type: "text", list: "champions", value: c ? c.name : (picks[role] || ""),
+      placeholder: t("enemy pick"), autocomplete: "off", spellcheck: "false" });
+    const commit = () => {
+      const typed = input.value.trim();
+      const found = champion(typed);
+      if (!typed) delete picks[role];
+      else picks[role] = found ? found.name : typed;
+      save();
+      renderEnemies();
+      refresh();
+    };
+    input.addEventListener("change", commit);
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") input.blur(); });
+    return h("div", { class: "slot" }, h("label", {}, t(ROLE_LABEL[role])),
+      h("div", { class: "pick" + (c ? " on" : "") }, c ? iconEl(c.name) : null, input));
+  }));
+}
+
+function laneText(s) {
+  const lane = s.lane.filter(m => m.games);
+  if (!lane.length) return t("{wins}–{losses} overall", { wins: s.wins, losses: s.games - s.wins });
+  const m = lane[0];
+  const rate = Math.round(100 * m.wins / m.games);
+  return [t("vs {enemy}", { enemy: m.enemy }) + " ", h("em", { class: m.delta < 0 ? "neg" : "" }, `${rate}%`), ` · ${m.games} g`];
+}
+
+let request = 0;
+async function refresh() {
+  const rows = document.getElementById("rows");
+  const enemies = ROLES.filter(r => picks[r]);
+  if (!enemies.length) {
+    setChildren(rows, [h("div", { class: "note" }, t("Type the enemy picks as they lock in: the best answers for each role show here."))]);
+    return;
+  }
+  const q = new URLSearchParams({ for: SHOW_FOR.join(",") });
+  for (const r of enemies) q.set(r, picks[r]);
+  if (SOURCE === "soloq") q.set("source", "soloq");
+  const mine = ++request;
+  setChildren(rows, [h("div", { class: "note" }, t("Loading…"))]);
+  let data;
+  try {
+    data = await getJson(`${API}/api/draft?${q}`);
+  } catch (err) {
+    if (mine === request) setChildren(rows, [h("div", { class: "note" }, t("Draft unavailable: {message}", { message: err.message }))]);
+    return;
+  }
+  if (mine !== request) return;  // a newer pick is on its way
+  setChildren(rows, SHOW_FOR.map(role => {
+    const list = (data.suggestions[role] || []).slice(0, TOP);
+    const lane = role === "bot" || role === "support" ? [picks.bot, picks.support].filter(Boolean).join(" + ") : picks[role];
+    return h("div", { class: "role" },
+      h("div", { class: "r" }, t(ROLE_LABEL[role]), lane ? h("small", {}, t("vs {enemy}", { enemy: lane })) : null),
+      list.length
+        ? h("div", { class: "sugg" }, list.map((s, k) => h("div", { class: "s" }, h("span", { class: "rank" }, `${k + 1}`), iconEl(s.champion),
+            h("div", { class: "t" }, h("b", {}, s.champion), h("span", {}, laneText(s))))))
+        : h("div", { class: "note" }, t("Not enough games against these picks.")));
+  }));
+}
+
+document.getElementById("title").textContent = t("Draft · best answers");
+document.getElementById("src").textContent = SOURCE === "soloq" ? t("Master+ solo queue") : t("pro play");
+const reset = document.getElementById("reset");
+reset.textContent = t("Reset");
+reset.addEventListener("click", () => { picks = {}; save(); renderEnemies(); refresh(); });
+
+(async () => {
+  try {
+    const versions = await getJson("https://ddragon.leagueoflegends.com/api/versions.json");
+    const data = await getJson(`https://ddragon.leagueoflegends.com/cdn/${versions[0]}/data/en_US/champion.json`);
+    for (const c of Object.values(data.data)) { dd.byKey.set(keyOf(c.name), c); dd.byKey.set(keyOf(c.id), c); }
+    dd.version = versions[0];
+    setChildren(document.getElementById("champions"),
+      Object.values(data.data).map(c => c.name).sort().map(n => h("option", { value: n })));
+  } catch (err) {
+    console.warn("Data Dragon unavailable", err);
+  }
+  renderEnemies();
+  refresh();
+})();
+</script>
+</body>
+</html>
