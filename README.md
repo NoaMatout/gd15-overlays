@@ -30,6 +30,25 @@ and `api` like the series panel.
 
 ![Preview overlay](docs/preview-en.png)
 
+## Draft assistant
+
+`draft.html?for=jungle,mid` is a panel for the draft phase: type the enemy picks in
+the five slots as they lock in (in OBS: right click the source, **Interact**), and
+the best answers for each role show up with their win rate against the lane
+opponent. The LoL Esports feed does not publish picks during the draft, hence the
+typing; the picks survive a reload of the source until **Reset**.
+
+| Parameter | Default | What it does |
+|---|---|---|
+| `for` | all roles | Roles to suggest picks for, e.g. `jungle,mid` |
+| `source` | `pro` | `pro` (pro games, last 6 months) or `soloq` (Challenger and Grandmaster, last 14 days) |
+| `top` | `3` | Picks shown per role (1 to 5) |
+| `width`, `lang`, `preview`, `api` | | As for the other overlays |
+
+Width **960**, height **460** for all five roles.
+
+![Draft overlay](docs/draft-en.png)
+
 ## Parameters (series panel)
 
 | Parameter | Default | What it does |

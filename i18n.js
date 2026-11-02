@@ -106,6 +106,17 @@
 
     // overlay
     "Loading…": "Chargement…",
+    // draft overlay
+    "Draft · best answers": "Draft · meilleures réponses",
+    "Master+ solo queue": "soloQ Master+",
+    "pro play": "games pro",
+    "Reset": "Effacer",
+    "enemy pick": "pick adverse",
+    "vs {enemy}": "vs {enemy}",
+    "{wins}–{losses} overall": "{wins}–{losses} au global",
+    "Type the enemy picks as they lock in: the best answers for each role show here.": "Tape les picks adverses dès qu'ils sont lockés : les meilleures réponses par rôle s'affichent ici.",
+    "Draft unavailable: {message}": "Draft indisponible : {message}",
+    "Not enough games against these picks.": "Pas assez de games contre ces picks.",
     // preview overlay
     "Elimination match: the loser goes home": "Match éliminatoire : le perdant rentre chez lui",
     "Qualification match: the winner goes through": "Match qualificatif : le gagnant passe",
