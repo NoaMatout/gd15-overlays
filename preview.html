@@ -12,7 +12,7 @@
     refresh  seconds between two updates (300 by default)
     width    panel width in px (900 by default)
     lang     en (default) or fr
-    api      GD15 instance to read from (default https://gd15.vercel.app)
+    api      GD15 instance to read from (default https://www.gd15.app)
     preview  1 = checkerboard behind the panel, to check transparency outside OBS
   Shows the team's next series: stakes, recent form, head to head this year,
   the bans recommended against each side and their comfort picks.
@@ -84,7 +84,7 @@
 <script>
 const params = new URLSearchParams(location.search);
 const TEAM = params.get("team");
-const API = (params.get("api") || "https://gd15.vercel.app").replace(/\/$/, "");
+const API = (params.get("api") || "https://www.gd15.app").replace(/\/$/, "");
 const REFRESH_MS = Math.max(60, parseInt(params.get("refresh") || "300", 10)) * 1000;
 if (params.get("width")) document.documentElement.style.setProperty("--width", `${parseInt(params.get("width"), 10)}px`);
 if (params.get("preview") === "1") document.body.classList.add("preview");
