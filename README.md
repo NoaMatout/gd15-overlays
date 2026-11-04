@@ -15,7 +15,7 @@ the bans recommended against the team, updated on its own while the series is li
    https://noamatout.github.io/gd15-overlays/series.html?team=G2%20Esports&bans=5
    ```
    (or the same page on the GD15 site:
-   `https://gd15.vercel.app/overlay.html?team=G2%20Esports&bans=5`)
+   `https://www.gd15.app/overlay.html?team=G2%20Esports&bans=5`)
 3. Width **800**, height **600**. The background is transparent.
 
 The team name is the one used on [Leaguepedia](https://lol.fandom.com) (spaces as `%20`).
@@ -66,7 +66,7 @@ Width **960**, height **460** for all five roles.
 
 - Live series: the LoL Esports feed, then [Leaguepedia](https://lol.fandom.com) once the game is recorded.
 - Recommended bans: each player's pro games since last year, weighted by recency and
-  smoothed so that 2/2 doesn't beat 15/20 (details on [the GD15 site](https://gd15.vercel.app)).
+  smoothed so that 2/2 doesn't beat 15/20 (details on [the GD15 site](https://www.gd15.app)).
 - Champion icons: Riot's Data Dragon. Team logos: LoL Esports.
 
 ## Compatibility

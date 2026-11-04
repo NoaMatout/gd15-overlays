@@ -13,7 +13,7 @@
     top      picks shown per role (3 by default, 1 to 5)
     width    panel width in px (900 by default)
     lang     en (default) or fr
-    api      GD15 instance to read from (default https://gd15.vercel.app)
+    api      GD15 instance to read from (default https://www.gd15.app)
     preview  1 = checkerboard behind the panel, to check transparency outside OBS
   Type the enemy picks in the five slots as they lock in (in OBS: right click the
   source, "Interact"). The suggestions update after each pick; the picks are kept
@@ -80,7 +80,7 @@
 <datalist id="champions"></datalist>
 <script>
 const params = new URLSearchParams(location.search);
-const API = (params.get("api") || "https://gd15.vercel.app").replace(/\/$/, "");
+const API = (params.get("api") || "https://www.gd15.app").replace(/\/$/, "");
 const ROLES = ["top", "jungle", "mid", "bot", "support"];
 const ROLE_LABEL = { top: "Top", jungle: "Jungle", mid: "Mid", bot: "ADC", support: "Support" };
 const FOR = (params.get("for") || "").split(",").filter(r => ROLES.indexOf(r) >= 0);
